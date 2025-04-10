@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using TrilhaApiDesafio.Context;
 using TrilhaApiDesafio.Models;
+using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
 
 namespace TrilhaApiDesafio.Controllers
 {
@@ -18,25 +20,33 @@ namespace TrilhaApiDesafio.Controllers
         [HttpGet("{id}")]
         public IActionResult ObterPorId(int id)
         {
-            // TODO: Buscar o Id no banco utilizando o EF
-            // TODO: Validar o tipo de retorno. Se não encontrar a tarefa, retornar NotFound,
-            // caso contrário retornar OK com a tarefa encontrada
-            return Ok();
+            var tarefa = _context.Tarefas.Find(id);
+
+            if (tarefa == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(tarefa);
         }
 
         [HttpGet("ObterTodos")]
-        public IActionResult ObterTodos()
+        public async Task<IActionResult> ObterTodos()
         {
-            // TODO: Buscar todas as tarefas no banco utilizando o EF
-            return Ok();
+            var tarefas = await _context.Tarefas.ToListAsync();
+            return Ok(tarefas);
         }
 
         [HttpGet("ObterPorTitulo")]
-        public IActionResult ObterPorTitulo(string titulo)
+        public async Task<IActionResult> ObterPorTitulo(string titulo)
         {
-            // TODO: Buscar  as tarefas no banco utilizando o EF, que contenha o titulo recebido por parâmetro
-            // Dica: Usar como exemplo o endpoint ObterPorData
-            return Ok();
+            if (string.IsNullOrWhiteSpace(titulo))
+            {
+                return BadRequest("O título não pode ser vazio.");
+            }
+
+            var tarefas = await _context.Tarefas.Where(t => t.Titulo.Contains(titulo)).ToListAsync();
+            return Ok(tarefas);
         }
 
         [HttpGet("ObterPorData")]
@@ -47,50 +57,84 @@ namespace TrilhaApiDesafio.Controllers
         }
 
         [HttpGet("ObterPorStatus")]
-        public IActionResult ObterPorStatus(EnumStatusTarefa status)
+        public async Task<IActionResult> ObterPorStatus(EnumStatusTarefa status)
         {
-            // TODO: Buscar  as tarefas no banco utilizando o EF, que contenha o status recebido por parâmetro
-            // Dica: Usar como exemplo o endpoint ObterPorData
-            var tarefa = _context.Tarefas.Where(x => x.Status == status);
-            return Ok(tarefa);
+            var tarefas = await _context.Tarefas.Where(t => t.Status == status).ToListAsync();
+            return Ok(tarefas);
         }
 
         [HttpPost]
-        public IActionResult Criar(Tarefa tarefa)
+        public async Task<IActionResult> CriarTarefa(Tarefa tarefa)
         {
-            if (tarefa.Data == DateTime.MinValue)
-                return BadRequest(new { Erro = "A data da tarefa não pode ser vazia" });
+            _context.Tarefas.Add(tarefa);
+            await _context.SaveChangesAsync();
 
-            // TODO: Adicionar a tarefa recebida no EF e salvar as mudanças (save changes)
             return CreatedAtAction(nameof(ObterPorId), new { id = tarefa.Id }, tarefa);
         }
 
         [HttpPut("{id}")]
-        public IActionResult Atualizar(int id, Tarefa tarefa)
+        public async Task<IActionResult> Atualizar(int id, Tarefa tarefa)
         {
-            var tarefaBanco = _context.Tarefas.Find(id);
+            // Verifica se o ID da rota corresponde ao ID da tarefa no corpo
+            if (id != tarefa.Id)
+            {
+                return BadRequest("O ID da rota não corresponde ao ID da tarefa no corpo da requisição.");
+            }
 
+            // Verifica se a tarefa com o ID existe no banco de dados
+            var tarefaBanco = await _context.Tarefas.FindAsync(id);
             if (tarefaBanco == null)
+            {
                 return NotFound();
+            }
 
-            if (tarefa.Data == DateTime.MinValue)
-                return BadRequest(new { Erro = "A data da tarefa não pode ser vazia" });
+            // Atualiza as propriedades da tarefa existente com os valores da tarefa recebida
+            tarefaBanco.Titulo = tarefa.Titulo;
+            tarefaBanco.Descricao = tarefa.Descricao;
+            tarefaBanco.Data = tarefa.Data;
+            tarefaBanco.Status = tarefa.Status;
 
-            // TODO: Atualizar as informações da variável tarefaBanco com a tarefa recebida via parâmetro
-            // TODO: Atualizar a variável tarefaBanco no EF e salvar as mudanças (save changes)
-            return Ok();
+            // Marca a entidade como modificada (embora o EF Core geralmente detecte isso automaticamente)
+            _context.Entry(tarefaBanco).State = EntityState.Modified;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return NoContent(); // Retorna 204 No Content para indicar sucesso na atualização
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Trata erros de concorrência, se necessário
+                if (!TarefaExiste(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
+
+        private bool TarefaExiste(int id)
+        {
+            return _context.Tarefas.Any(e => e.Id == id);
         }
 
         [HttpDelete("{id}")]
-        public IActionResult Deletar(int id)
+        public async Task<IActionResult> Deletar(int id)
         {
-            var tarefaBanco = _context.Tarefas.Find(id);
+            var tarefaBanco = await _context.Tarefas.FindAsync(id);
 
             if (tarefaBanco == null)
+            {
                 return NotFound();
+            }
 
-            // TODO: Remover a tarefa encontrada através do EF e salvar as mudanças (save changes)
-            return NoContent();
+            _context.Tarefas.Remove(tarefaBanco);
+            await _context.SaveChangesAsync();
+
+            return NoContent(); // Retorna 204 No Content para indicar sucesso na exclusão
         }
     }
 }
